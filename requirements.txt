@@ -6,3 +6,5 @@ selenium~=4.23.1
 webdriver-manager~=4.0.2
 python-dotenv==1.0.1
 nltk==3.8.1
+selenium~=4.23.1
+webdriver-manager~=4.0.2
