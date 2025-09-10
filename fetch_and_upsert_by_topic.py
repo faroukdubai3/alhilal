@@ -4,7 +4,6 @@ import json
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
-
 from dateutil import parser as date_parser
 from newspaper import Article
 from selenium import webdriver
@@ -13,6 +12,10 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 import supabase
 from postgrest.exceptions import APIError
+from pygooglenews import GoogleNews
+import io
+import contextlib
+from generate import generate as llm_generate
 
 
 def save_topic_headlines_to_json(newstopics_topicid: str, json_file_basename: str) -> str:
@@ -20,7 +23,7 @@ def save_topic_headlines_to_json(newstopics_topicid: str, json_file_basename: st
     Fetch topic headlines from Google News and save the raw payload as JSON.
     Returns the path to the saved JSON file.
     """
-    from pygooglenews import GoogleNews
+
 
     print(f"[1/5] Fetching Google News headlines for topic: {newstopics_topicid}")
     gn = GoogleNews(lang='ar', country='SA')
@@ -124,7 +127,27 @@ def get_full_article(newsurl: str) -> Optional[Tuple[str, str, str, str, Any, st
         article.download()
         article.parse()
         news_summary = None
-        if ensure_nltk_punkt():
+        # Try summarization using the new LLM generator from generate.py
+        try:
+            prompt = (
+                "لخص الخبر التالي في 3-4 جمل واضحة بالعربية، بدون زخرفة أو رموز تعبيرية، "
+                "مع الحفاظ على أهم التفاصيل والأرقام والأسماء.\n\nالعنوان: "
+            )
+            article_text_for_llm = (article.text or "")
+            if len(article_text_for_llm) > 6000:
+                article_text_for_llm = article_text_for_llm[:6000]
+            llm_input = f"{article.title}\n\nالنص:\n{article_text_for_llm}"
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                llm_generate(prompt, llm_input)
+            candidate = buffer.getvalue().strip()
+            news_summary = candidate if candidate else None
+            if news_summary:
+                print("    - Generated summary via LLM")
+        except Exception as e:
+            print(f"    - LLM summary generation failed: {e}")
+        # Fallback to newspaper3k NLP summary if needed
+        if not news_summary and ensure_nltk_punkt():
             try:
                 article.nlp()
                 news_summary = getattr(article, 'summary', None)
